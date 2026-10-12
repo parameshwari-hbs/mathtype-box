@@ -5,7 +5,10 @@ Evaluates precision, recall, F1 score, false positives, missed formulas, and bou
 
 import os
 import json
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from typing import Dict, Any, List
 from app.detection.hybrid_engine import run_hybrid_formula_detection
 

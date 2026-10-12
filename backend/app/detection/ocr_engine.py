@@ -3,7 +3,10 @@ Scanned PDF & Layout OCR Detection Module
 Uses page image rendering and computer vision layout segmentation for image-based PDFs.
 """
 
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 import cv2
 import numpy as np
 from typing import List, Dict, Any

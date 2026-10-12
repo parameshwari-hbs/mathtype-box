@@ -4,7 +4,10 @@ Applies exact 0.01 pt red border rectangle annotations to PDF documents.
 Handles page rotation, crop box offsets, and PDF syntax formatting.
 """
 
-import fitz  # PyMuPDF
+try:
+    import pymupdf as fitz  # PyMuPDF
+except ImportError:
+    import fitz
 from typing import List, Dict, Any, Tuple
 from app.config import AnnotationConfig, DEFAULT_ANNOTATION_CONFIG
 

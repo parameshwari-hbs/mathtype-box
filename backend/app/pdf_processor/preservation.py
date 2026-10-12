@@ -4,7 +4,10 @@ Ensures existing document structure, tags, text, fonts, and annotations are pres
 Detects pre-existing rectangle annotations to prevent duplicates.
 """
 
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from typing import List, Dict, Any, Tuple
 
 def calculate_iou(boxA: List[float], boxB: List[float]) -> float:

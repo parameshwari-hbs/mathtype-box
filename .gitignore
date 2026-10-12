@@ -1,0 +1,22 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+ 
+# Temporary uploads and exports
+temp_uploads/
+temp_exports/
+temp_tests/
+test_annotated_out.pdf
+ 
+# Node & Frontend
+frontend/node_modules/
+frontend/dist/
+ 
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+ 

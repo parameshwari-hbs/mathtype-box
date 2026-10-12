@@ -5,7 +5,10 @@ When formula tags are present, exclusively detects tagged formulas to eliminate 
 Provides native text heuristics and OCR only for untagged legacy PDFs.
 """
 
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from typing import List, Dict, Any
 from app.detection.struct_tree import extract_struct_tree_formulas, has_struct_tree_formulas
 from app.detection.text_analysis import extract_text_span_candidates

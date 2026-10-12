@@ -4,7 +4,10 @@ Checks PDF security restrictions, digital signatures, encryption, and verifies e
 """
 
 import os
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from typing import Dict, Any, List
 
 def check_pdf_security(file_path: str) -> Dict[str, Any]:

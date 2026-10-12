@@ -5,7 +5,10 @@ Guarantees that trailing/leading commas, periods, and punctuation are completely
 """
 
 import re
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from typing import List, Dict, Any, Tuple
 from app.detection.false_positive import is_false_positive, MATH_SYMBOLS
 

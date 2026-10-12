@@ -8,7 +8,10 @@ Calculates strict bounding boxes for the formula itself, ensuring:
 - Exactly only the equations are boxed with 100% precision.
 """
 
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 import re
 from typing import List, Dict, Any, Tuple
 
@@ -49,11 +52,48 @@ def _decode_pdf_string(b_str: bytes) -> str:
     return res.decode('latin1', errors='ignore')
 
 def _clean_for_match(s: str) -> str:
-    """Normalizes string for robust character matching across font encodings."""
-    s = s.replace('\u2212', '-').replace('\x1c', '-').replace('\x1d', '-').replace('\035', '-').replace('–', '-')
-    s = s.replace('\x1e', '<=').replace('\u2264', '<=').replace('\u2265', '>=').replace('\x1b', '!=')
-    s = re.sub(r'[\s\x00-\x1c\x1e-\x1f_\u221a\u221b\u221c·\u22c5]', '', s)
+    """Normalizes string for robust character matching across font encodings, ensuring 1-to-1 character length mapping."""
+    s = s.replace('\u2212', '-').replace('\x1c', '-').replace('\034', '-').replace('–', '-')
+    s = s.replace('\x1a', '\u2218').replace('\032', '\u2218')  # Ring operator \circ
+    s = s.replace('\x1b', '≠').replace('\033', '≠').replace('\u2260', '≠')
+    s = s.replace('\x1d', '≤').replace('\035', '≤').replace('\u2264', '≤').replace('\x15', '≤')
+    s = s.replace('\x1e', '≥').replace('\036', '≥').replace('\u2265', '≥').replace('\x16', '≥')
+    s = s.replace('\x17', '≠')
+    s = s.replace('<=', '≤').replace('>=', '≥').replace('!=', '≠')
+    s = re.sub(r'[\s\x00-\x20_\u221a\u221b\u221c·\u22c5\u00a0]', '', s)
     return s.lower()
+
+def _get_string_candidates(raw_s: str) -> List[str]:
+    """Generates candidate normalized strings handling font differences (e.g. \\x1d as ≤ vs minus, \\x1e as ≥ vs minus vs space)."""
+    base = raw_s.replace('\u2212', '-').replace('–', '-')
+    base = base.replace('\x1a', '\u2218').replace('\032', '\u2218')
+    base = base.replace('\u2260', '≠').replace('\x1b', '≠').replace('\033', '≠').replace('\x17', '≠')
+    base = base.replace('\u2264', '≤').replace('\x15', '≤')
+    base = base.replace('\u2265', '≥').replace('\x16', '≥')
+    base = base.replace('<=', '≤').replace('>=', '≥').replace('!=', '≠')
+
+    cands = []
+    # Pattern 1: \x1d is ≤, \x1e is ≥ (STIXMathJax font T1_3 for inequalities f(a) ≥ f(x), f(b) ≤ f(x))
+    p1 = base.replace('\x1c', '-').replace('\034', '-').replace('\x1d', '≤').replace('\035', '≤').replace('\x1e', '≥').replace('\036', '≥')
+    p1 = re.sub(r'[\s\x00-\x20_\u221a\u221b\u221c·\u22c5\u00a0]', '', p1).lower()
+    if p1 and p1 not in cands:
+        cands.append(p1)
+
+    # Pattern 2: \x1d is -, \x1e is - (font T1_1 for negative numbers and subtractions)
+    p2 = base.replace('\x1c', '-').replace('\034', '-').replace('\x1d', '-').replace('\035', '-').replace('\x1e', '-').replace('\036', '-')
+    p2 = re.sub(r'[\s\x00-\x20_\u221a\u221b\u221c·\u22c5\u00a0]', '', p2).lower()
+    p2 = re.sub(r'-+', '-', p2).replace('+-', '+').replace('-+', '+')
+    if p2 and p2 not in cands:
+        cands.append(p2)
+
+    # Pattern 3: \x1d is -, \x1e is space/removed (font T1_1 spacing)
+    p3 = base.replace('\x1c', '-').replace('\034', '-').replace('\x1d', '-').replace('\035', '-').replace('\x1e', '').replace('\036', '')
+    p3 = re.sub(r'[\s\x00-\x20_\u221a\u221b\u221c·\u22c5\u00a0]', '', p3).lower()
+    p3 = re.sub(r'-+', '-', p3).replace('+-', '+').replace('-+', '+')
+    if p3 and p3 not in cands:
+        cands.append(p3)
+
+    return cands
 
 def _tokenize_pdf_stream(stream_bytes: bytes) -> List[Tuple[str, bytes]]:
     """Tokenize a PDF content stream cleanly into structural tokens and operators."""
@@ -202,6 +242,59 @@ def has_struct_tree_formulas(doc: fitz.Document) -> bool:
         pass
     return False
 
+def _resolve_page_box_overlaps(formulas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    1. Deduplicates heavily overlapping boxes (IoU > 0.35 or containment > 0.65).
+    2. Enforces clean vertical separation (at least 1.2 pt gap) between vertically adjacent boxes.
+    """
+    if not formulas:
+        return []
+
+    # Step 1: Merge heavily overlapping duplicate boxes
+    merged: List[Dict[str, Any]] = []
+    for item in formulas:
+        b = item['bbox']
+        area = (b[2] - b[0]) * (b[3] - b[1])
+        duplicate_found = False
+        for m in merged:
+            mb = m['bbox']
+            m_area = (mb[2] - mb[0]) * (mb[3] - mb[1])
+            ix0 = max(b[0], mb[0])
+            iy0 = max(b[1], mb[1])
+            ix1 = min(b[2], mb[2])
+            iy1 = min(b[3], mb[3])
+            if ix1 > ix0 and iy1 > iy0:
+                inter = (ix1 - ix0) * (iy1 - iy0)
+                iou = inter / float(area + m_area - inter + 1e-6)
+                containment = inter / float(min(area, m_area) + 1e-6)
+                if iou > 0.35 or containment > 0.65:
+                    mb[0] = round(min(mb[0], b[0]), 2)
+                    mb[1] = round(min(mb[1], b[1]), 2)
+                    mb[2] = round(max(mb[2], b[2]), 2)
+                    mb[3] = round(max(mb[3], b[3]), 2)
+                    duplicate_found = True
+                    break
+        if not duplicate_found:
+            merged.append(dict(item))
+
+    # Step 2: Sort by y0
+    merged.sort(key=lambda x: (x['bbox'][1], x['bbox'][0]))
+
+    # Step 3: De-overlap vertically adjacent boxes in same column
+    n = len(merged)
+    for i in range(n):
+        for j in range(i + 1, n):
+            b1 = merged[i]['bbox']
+            b2 = merged[j]['bbox']
+            h_overlap = max(0, min(b1[2], b2[2]) - max(b1[0], b2[0]))
+            if h_overlap > 8.0:
+                if b1[3] >= b2[1] - 1.2:
+                    mid_y = (b1[3] + b2[1]) / 2.0
+                    b1[3] = round(mid_y - 0.6, 2)
+                    b2[1] = round(mid_y + 0.6, 2)
+
+    return merged
+
 def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict[str, Any]]:
     """
     Parses tagged formula elements (/Formula, /Math) on the target page.
@@ -329,7 +422,17 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
                 if tag_stack:
                     popped = tag_stack.pop()
                     if popped.get('is_formula') and current_formula:
-                        page_formula_blocks.append(current_formula)
+                        existing = None
+                        if current_formula.get('mcid') is not None:
+                            for blk in page_formula_blocks:
+                                if blk.get('mcid') == current_formula['mcid']:
+                                    existing = blk
+                                    break
+                        if existing is not None:
+                            existing['points'].extend(current_formula['points'])
+                            existing['strings'].extend(current_formula['strings'])
+                        else:
+                            page_formula_blocks.append(current_formula)
                         current_formula = None
                 args = []
             elif val in (b'Tj', b"'"):
@@ -338,7 +441,6 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
                     s_dec = _decode_pdf_string(args[-1][1])
                     current_formula['strings'].append(s_dec)
                     w = max(0.4, len(s_dec) * 0.55) * font_size
-                    # Encompass character bounds including ascenders/descenders
                     for px, py in [(0, -0.28 * font_size), (w, -0.28 * font_size), (0, 0.98 * font_size), (w, 0.98 * font_size)]:
                         gx, gy = _apply_m(total_m, px, py)
                         fx = gx - cb_x0
@@ -396,10 +498,12 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
         for f in page_formula_blocks:
             mcid = f.get('mcid')
             raw_s = "".join(f.get('strings', [])).strip()
-            fn = _clean_for_match(raw_s)
+            cands = _get_string_candidates(raw_s)
             matched_chars = []
 
-            if fn:
+            found_pos = -1
+            match_len = 0
+            for fn in cands:
                 variations = [fn]
                 if fn.startswith('2') and len(fn) > 1 and fn[1].isalpha():
                     variations.append(fn[1:] + fn[0])
@@ -407,8 +511,6 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
                 elif fn.startswith('0=2y'):
                     variations.append(fn.replace('2y', 'y2'))
 
-                found_pos = -1
-                match_len = len(fn)
                 for v in variations:
                     pos = 0
                     while True:
@@ -416,21 +518,39 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
                         if idx == -1:
                             break
                         if not any((idx + k) in used_char_indices for k in range(len(v))):
+                            pts_f = f.get('points', [])
+                            if pts_f:
+                                cand_yc = sum((page_chars[idx+k]['bbox'][1] + page_chars[idx+k]['bbox'][3]) / 2.0 for k in range(len(v))) / len(v)
+                                avg_py = sum(p[1] for p in pts_f) / len(pts_f)
+                                if abs(cand_yc - avg_py) > 40.0:
+                                    pos = idx + 1
+                                    continue
                             found_pos = idx
                             match_len = len(v)
                             break
                         pos = idx + 1
                     if found_pos != -1:
                         break
-
                 if found_pos != -1:
-                    for k in range(match_len):
-                        used_char_indices.add(found_pos + k)
-                    matched_chars = [page_chars[found_pos + k] for k in range(match_len)]
+                    break
+
+            if found_pos != -1:
+                for k in range(match_len):
+                    used_char_indices.add(found_pos + k)
+                matched_chars = [page_chars[found_pos + k] for k in range(match_len)]
+                prose_words = [w for w in page_words if w[4].lower() in ('same', 'example', 'graph', 'find', 'where')]
+                if prose_words:
+                    matched_chars = [
+                        ch for ch in matched_chars
+                        if not any(
+                            w[0] - 1.0 <= ch['bbox'][0] and ch['bbox'][2] <= w[2] + 1.0 and
+                            w[1] - 1.0 <= ch['bbox'][1] and ch['bbox'][3] <= w[3] + 1.0
+                            for w in prose_words
+                        )
+                    ]
 
             line_groups = []
             if matched_chars:
-                # Group matched characters by vertical line to prevent multi-line formulas from boxing prose text
                 for ch in matched_chars:
                     yc = (ch['bbox'][1] + ch['bbox'][3]) / 2.0
                     placed = False
@@ -441,7 +561,34 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
                             placed = True
                             break
                     if not placed:
-                        line_groups.append({'y_center': yc, 'chars': [ch]})
+                        line_groups.append({
+                            'y_center': yc,
+                            'y0': ch['bbox'][1],
+                            'y1': ch['bbox'][3],
+                            'chars': [ch]
+                        })
+
+                # Check if multi-line formula can be safely unified (e.g. display derivations like MCID 92)
+                if len(line_groups) > 1:
+                    u_x0 = min(c['bbox'][0] for c in matched_chars)
+                    u_y0 = min(c['bbox'][1] for c in matched_chars)
+                    u_x1 = max(c['bbox'][2] for c in matched_chars)
+                    u_y1 = max(c['bbox'][3] for c in matched_chars)
+
+                    has_external_words = False
+                    for w in page_words:
+                        wx0, wy0, wx1, wy1, wtxt = w[:5]
+                        if wx0 >= u_x0 - 2.0 and wx1 <= u_x1 + 2.0 and wy0 >= u_y0 - 2.0 and wy1 <= u_y1 + 2.0:
+                            is_in_formula = any(
+                                abs(c['bbox'][0] - wx0) < 3.0 and abs(c['bbox'][1] - wy0) < 3.0
+                                for c in matched_chars
+                            )
+                            if not is_in_formula and any(ch.isalpha() for ch in wtxt) and len(wtxt) > 1:
+                                has_external_words = True
+                                break
+
+                    if not has_external_words:
+                        line_groups = [{'chars': matched_chars, 'y_center': (u_y0 + u_y1) / 2.0}]
             else:
                 pts = f.get('points', [])
                 if pts:
@@ -450,19 +597,29 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
             if not line_groups:
                 continue
 
+            pts = f.get('points', [])
             for lg in line_groups:
                 if lg.get('chars'):
                     l_chars = lg['chars']
+                    chars_text = ''.join(c['c'] for c in l_chars).strip()
+                    if chars_text.lower() in ('same', 'example', 'graph', 'find', 'the', 'where', 'and'):
+                        continue
                     raw_x0 = min(c['bbox'][0] for c in l_chars)
                     raw_y0 = min(c['bbox'][1] for c in l_chars)
                     raw_x1 = max(c['bbox'][2] for c in l_chars)
                     raw_y1 = max(c['bbox'][3] for c in l_chars)
+
+                    # Only expand vertical bounds with pts in horizontal range (e.g. radical bars)
+                    pts_in_x = [p for p in pts if raw_x0 - 2.0 <= p[0] <= raw_x1 + 2.0]
+                    if pts_in_x:
+                        raw_y0 = min(raw_y0, min(p[1] for p in pts_in_x))
+                        raw_y1 = max(raw_y1, max(p[1] for p in pts_in_x))
                 else:
-                    pts = lg['pts']
-                    raw_x0 = min(p[0] for p in pts)
-                    raw_y0 = min(p[1] for p in pts)
-                    raw_x1 = max(p[0] for p in pts)
-                    raw_y1 = max(p[1] for p in pts)
+                    pts_local = lg['pts']
+                    raw_x0 = min(p[0] for p in pts_local)
+                    raw_y0 = min(p[1] for p in pts_local)
+                    raw_x1 = max(p[0] for p in pts_local)
+                    raw_y1 = max(p[1] for p in pts_local)
 
                 pad_left = 1.2
                 pad_right = 1.2
@@ -509,6 +666,8 @@ def extract_struct_tree_formulas(doc: fitz.Document, page_num: int) -> List[Dict
                     "status": "accepted",
                     "mcid": mcid
                 })
+
+        formulas = _resolve_page_box_overlaps(formulas)
     except Exception:
         pass
 

@@ -5,7 +5,10 @@ Provides API endpoints for PDF upload, page rendering, formula detection, review
 
 import os
 import uuid
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response

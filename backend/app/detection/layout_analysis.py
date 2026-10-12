@@ -5,7 +5,10 @@ and strictly prevents over-merging of separate equations or merging with paragra
 """
 
 import re
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from typing import List, Dict, Any
 
 EQUATION_NUM_PATTERN = re.compile(r'^\s*[\(\[\{]\s*(\d+(\.\d+)*)\s*[\)\]\}]\s*$')

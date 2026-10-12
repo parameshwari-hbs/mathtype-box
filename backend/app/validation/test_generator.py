@@ -4,7 +4,10 @@ Programmatically generates test PDFs with inline math, display math, fractions, 
 """
 
 import os
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 
 def generate_sample_test_pdf(output_path: str) -> str:
     """
