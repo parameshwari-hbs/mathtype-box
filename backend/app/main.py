@@ -181,12 +181,13 @@ def update_detections(doc_id: str, payload: Dict[str, Any] = Body(...)):
         new_formula = payload.get("formula")
         if new_formula:
             page_num = new_formula.get("page_num", 1)
-            f_id = f"formula_manual_p{page_num}_{uuid.uuid4().hex[:6]}"
+            f_id = new_formula.get("id") or f"formula_manual_p{page_num}_{uuid.uuid4().hex[:6]}"
             new_formula["id"] = f_id
             new_formula["detection_method"] = "manual"
             new_formula["confidence"] = 1.00
             new_formula["status"] = "accepted"
             state["formulas"].append(new_formula)
+            return {"status": "updated", "formula": new_formula, "formulas_count": len(state["formulas"])}
     elif action == "update_bbox":
         formula_id = payload.get("formula_id")
         new_bbox = payload.get("bbox")

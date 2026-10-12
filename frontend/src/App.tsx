@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Upload, FileText, CheckCircle, AlertTriangle, ShieldCheck, RefreshCw } from 'lucide-react';
 import { Header } from './components/Header';
 import { StatsBar } from './components/StatsBar';
@@ -26,10 +26,42 @@ export const App: React.FC = () => {
   const [exporting, setExporting] = useState<boolean>(false);
   const [benchmarkReport, setBenchmarkReport] = useState<BenchmarkReport | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
+  const landingFileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        handleUpload(file);
+      } else {
+        alert('Please drop a valid PDF document (.pdf)');
+      }
+    }
+  };
+
+  const triggerFileSelect = () => {
+    landingFileInputRef.current?.click();
   };
 
   const handleUpload = async (file: File) => {
@@ -242,33 +274,72 @@ export const App: React.FC = () => {
           <p className="text-sm font-medium text-slate-300">Processing PDF document & extracting formula coordinates...</p>
         </div>
       ) : !docState ? (
-        /* Empty Dropzone Landing View */
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="max-w-xl w-full glass-panel rounded-2xl p-10 border border-slate-800 text-center space-y-6 shadow-2xl">
-            <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto shadow-inner">
-              <Upload className="w-8 h-8 text-rose-400" />
-            </div>
+        /* Empty Dropzone Landing View with Full Drag & Drop Support */
+        <div
+          className="flex-1 flex items-center justify-center p-8"
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+        >
+          <input
+            type="file"
+            ref={landingFileInputRef}
+            accept="application/pdf"
+            onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
+            className="hidden"
+          />
 
-            <div className="space-y-2">
+          <div
+            onClick={triggerFileSelect}
+            className={`max-w-xl w-full glass-panel rounded-2xl p-10 border-2 text-center space-y-6 shadow-2xl transition-all cursor-pointer ${
+              isDraggingFile
+                ? 'border-rose-500 bg-rose-950/40 scale-[1.02] ring-4 ring-rose-500/20 shadow-rose-950/50'
+                : 'border-slate-800/80 hover:border-rose-500/60 hover:bg-slate-900/60'
+            }`}
+          >
+            {/* Clickable Arrow Button with Pulse / Hover Effects */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerFileSelect();
+              }}
+              className={`w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-inner transition-all cursor-pointer ${
+                isDraggingFile
+                  ? 'bg-rose-500 text-white scale-110 shadow-rose-900/50'
+                  : 'bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/30 hover:border-rose-500/70 hover:scale-105 active:scale-95'
+              }`}
+              title="Click or drop file to upload PDF"
+            >
+              <Upload className={`w-8 h-8 transition-transform ${isDraggingFile ? 'scale-110 text-white animate-bounce' : 'text-rose-400 group-hover:scale-110'}`} />
+            </button>
+
+            <div className="space-y-2 pointer-events-none">
               <h2 className="text-xl font-bold text-slate-100">FormulaBox Automator</h2>
               <p className="text-sm text-slate-400 max-w-md mx-auto">
-                Upload a PDF file to automatically detect formulas and draw client-compliant 0.01 pt red rectangle annotations.
+                {isDraggingFile ? (
+                  <span className="text-rose-300 font-semibold text-base animate-pulse">Release to drop and analyze PDF document</span>
+                ) : (
+                  <span>Drag & Drop your PDF document here, or click anywhere to browse files</span>
+                )}
               </p>
             </div>
 
             <div className="pt-2 flex justify-center gap-4">
-              <label className="px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm cursor-pointer shadow-lg shadow-rose-950 transition">
-                Select PDF Document
-                <input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])}
-                  className="hidden"
-                />
-              </label>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerFileSelect();
+                }}
+                className="px-6 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm cursor-pointer shadow-lg shadow-rose-950 transition active:scale-95 flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Select PDF Document</span>
+              </button>
             </div>
 
-            <div className="pt-6 border-t border-slate-800/80 grid grid-cols-3 gap-4 text-xs text-slate-400">
+            <div className="pt-6 border-t border-slate-800/80 grid grid-cols-3 gap-4 text-xs text-slate-400 pointer-events-none">
               <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800">
                 <span className="font-semibold text-rose-400 block mb-1">0.01 pt Red Border</span>
                 Exact Adobe Acrobat standard annotation
