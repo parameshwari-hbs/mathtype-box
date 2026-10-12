@@ -6,22 +6,102 @@ import socket
 import subprocess
 import warnings
 
+import shutil
+
 # Suppress PyMuPDF deprecation warning
 warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
 
-# Add backend to sys.path
-backend_dir = os.path.join(os.path.dirname(__file__), "backend")
+# Dynamically resolve project root directory
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.join(PROJECT_ROOT, "backend")
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 import uvicorn
+from fastapi import HTTPException
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 from app.main import app
 
-# Mount static frontend dist directory if available
-dist_dir = os.path.join(os.path.dirname(__file__), "frontend", "dist")
-if os.path.exists(dist_dir):
-    app.mount("/", StaticFiles(directory=dist_dir, html=True), name="static")
+def ensure_frontend_built() -> str:
+    """Dynamically builds the React frontend if dist/index.html is missing."""
+    dist_dir = os.path.join(PROJECT_ROOT, "frontend", "dist")
+    index_html = os.path.join(dist_dir, "index.html")
+    frontend_dir = os.path.join(PROJECT_ROOT, "frontend")
+
+    if os.path.exists(index_html):
+        return dist_dir
+
+    print("=" * 60)
+    print("Frontend production bundle not found. Building dynamically...")
+    print("=" * 60)
+
+    npm_cmd = shutil.which("npm") or ("npm.cmd" if sys.platform == "win32" else "npm")
+    node_modules = os.path.join(frontend_dir, "node_modules")
+
+    if not os.path.exists(node_modules):
+        try:
+            print("[*] Installing frontend dependencies (npm install)...")
+            subprocess.run(f"{npm_cmd} install", shell=True, cwd=frontend_dir, check=True)
+        except Exception as e:
+            print(f"[!] Warning: npm install failed: {e}")
+
+    try:
+        print("[*] Compiling frontend bundle (npm run build)...")
+        subprocess.run(f"{npm_cmd} run build", shell=True, cwd=frontend_dir, check=True)
+        print("[+] Frontend bundle compiled successfully!")
+    except Exception as e:
+        print(f"[!] Warning: npm run build could not be executed: {e}")
+
+    return dist_dir
+
+dist_dir = ensure_frontend_built()
+
+# Mount static assets directory if available
+assets_dir = os.path.join(dist_dir, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+# SPA catch-all handler for dynamic routing and fallback
+@app.get("/{full_path:path}")
+async def serve_spa_app(full_path: str):
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404, detail="API endpoint not found")
+
+    target_file = os.path.join(dist_dir, full_path)
+    if full_path and os.path.isfile(target_file):
+        return FileResponse(target_file)
+
+    index_file = os.path.join(dist_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+
+    return HTMLResponse(
+        content="""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>FormulaBox Automator - Setup</title>
+            <style>
+                body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+                .box { max-width: 520px; padding: 2.5rem; background: #1e293b; border-radius: 1rem; border: 1px solid #334155; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+                h1 { color: #f43f5e; margin-top: 0; }
+                p { color: #94a3b8; line-height: 1.6; font-size: 0.95rem; }
+                code { background: #0f172a; padding: 0.3rem 0.6rem; border-radius: 0.35rem; color: #38bdf8; font-family: monospace; }
+            </style>
+        </head>
+        <body>
+            <div class="box">
+                <h1>FormulaBox Automator</h1>
+                <p>Frontend production bundle is not yet compiled on this machine.</p>
+                <p>Please open a terminal and run:<br><br><code>cd frontend && npm install && npm run build</code></p>
+                <p>Then refresh this browser window.</p>
+            </div>
+        </body>
+        </html>
+        """,
+        status_code=200
+    )
 
 def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
     """Check if a TCP port is currently open and bound."""
