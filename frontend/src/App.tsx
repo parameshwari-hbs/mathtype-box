@@ -5,9 +5,10 @@ import { StatsBar } from './components/StatsBar';
 import { PdfViewer } from './components/PdfViewer';
 import { SidebarList } from './components/SidebarList';
 import { ConfigModal } from './components/ConfigModal';
-import { DocumentState, AnnotationConfig, FormulaStatus, BenchmarkReport } from './types/formula';
+import { DocumentState, AnnotationConfig, FormulaStatus, FormulaDetection, BenchmarkReport } from './types/formula';
 import {
   uploadPdfFile,
+  getDocumentState,
   updateFormulaStatus,
   addManualFormula,
   deleteFormula,
@@ -49,7 +50,7 @@ export const App: React.FC = () => {
   const handleUpdateStatus = async (formulaId: string, status: string) => {
     if (!docState) return;
     try {
-      await updateFormulaStatus(docState.doc_id, formulaId, status);
+      // Optimistically update status and stats immediately
       setDocState((prev) => {
         if (!prev) return null;
         const updatedFormulas = prev.formulas.map((f) =>
@@ -57,12 +58,25 @@ export const App: React.FC = () => {
         );
         const accepted = updatedFormulas.filter((f) => f.status === 'accepted').length;
         const uncertain = updatedFormulas.filter((f) => f.status === 'uncertain').length;
+        const rejected = updatedFormulas.filter((f) => f.status === 'rejected').length;
         return {
           ...prev,
           formulas: updatedFormulas,
-          stats: { ...prev.stats, accepted_count: accepted, uncertain_count: uncertain }
+          stats: {
+            ...prev.stats,
+            accepted_count: accepted,
+            uncertain_count: uncertain,
+            rejected_count: rejected,
+            applied_count: accepted
+          }
         };
       });
+
+      // Close popover immediately
+      setSelectedFormulaId((current) => (current === formulaId ? null : current));
+
+      await updateFormulaStatus(docState.doc_id, formulaId, status);
+      showToast(status === 'accepted' ? 'Formula box accepted' : 'Formula box rejected');
     } catch (err: any) {
       console.error(err);
     }
@@ -71,33 +85,84 @@ export const App: React.FC = () => {
   const handleAddManualFormula = async (page: number, bbox: [number, number, number, number]) => {
     if (!docState) return;
     try {
-      await addManualFormula(docState.doc_id, { page_num: page, bbox, formula_text: '[Manual Formula Box]' });
-      const state = await uploadPdfFile(new File([], docState.filename)); // refresh
-    } catch (err: any) {
-      // Refresh state directly from backend
-      showToast('Added manual formula rectangle');
-    }
-  };
+      const generatedId = `formula_manual_p${page}_${Date.now()}`;
+      const res = await addManualFormula(docState.doc_id, {
+        id: generatedId,
+        page_num: page,
+        bbox,
+        formula_text: '[Manual Formula Box]'
+      });
 
-  const handleDeleteFormula = async (formulaId: string) => {
-    if (!docState) return;
-    try {
-      await deleteFormula(docState.doc_id, formulaId);
+      const actualId = res?.formula?.id || generatedId;
+      const newFormula: FormulaDetection = {
+        id: actualId,
+        page_num: page,
+        bbox,
+        formula_text: '[Manual Formula Box]',
+        detection_method: 'manual',
+        formula_type: 'display',
+        confidence: 1.0,
+        status: 'accepted'
+      };
+
       setDocState((prev) => {
         if (!prev) return null;
-        const updated = prev.formulas.filter((f) => f.id !== formulaId);
+        const updated = [...prev.formulas, newFormula];
+        const accepted = updated.filter((f) => f.status === 'accepted').length;
+        const uncertain = updated.filter((f) => f.status === 'uncertain').length;
+        const rejected = updated.filter((f) => f.status === 'rejected').length;
+
         return {
           ...prev,
           formulas: updated,
           stats: {
             ...prev.stats,
             total_detected: updated.length,
-            accepted_count: updated.filter((f) => f.status === 'accepted').length,
-            uncertain_count: updated.filter((f) => f.status === 'uncertain').length
+            accepted_count: accepted,
+            uncertain_count: uncertain,
+            rejected_count: rejected,
+            applied_count: accepted
           }
         };
       });
-      if (selectedFormulaId === formulaId) setSelectedFormulaId(null);
+
+      // Select the new manual box so [✓] [✕] [🗑] appears above it
+      setSelectedFormulaId(actualId);
+      showToast(`Added manual formula on Page ${page}`);
+    } catch (err: any) {
+      console.error('Error adding manual formula:', err);
+      try {
+        const fresh = await getDocumentState(docState.doc_id);
+        setDocState(fresh);
+      } catch (e) {}
+    }
+  };
+
+  const handleDeleteFormula = async (formulaId: string) => {
+    if (!docState) return;
+    try {
+      setSelectedFormulaId((current) => (current === formulaId ? null : current));
+      setDocState((prev) => {
+        if (!prev) return null;
+        const updated = prev.formulas.filter((f) => f.id !== formulaId);
+        const accepted = updated.filter((f) => f.status === 'accepted').length;
+        const uncertain = updated.filter((f) => f.status === 'uncertain').length;
+        const rejected = updated.filter((f) => f.status === 'rejected').length;
+        return {
+          ...prev,
+          formulas: updated,
+          stats: {
+            ...prev.stats,
+            total_detected: updated.length,
+            accepted_count: accepted,
+            uncertain_count: uncertain,
+            rejected_count: rejected,
+            applied_count: accepted
+          }
+        };
+      });
+      await deleteFormula(docState.doc_id, formulaId);
+      showToast('Formula box deleted');
     } catch (err: any) {
       console.error(err);
     }

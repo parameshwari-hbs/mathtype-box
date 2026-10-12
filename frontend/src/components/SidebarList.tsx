@@ -22,6 +22,10 @@ export const SidebarList: React.FC<SidebarListProps> = ({
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
+  const acceptedCount = formulas.filter(f => f.status === 'accepted').length;
+  const rejectedCount = formulas.filter(f => f.status === 'rejected').length;
+  const uncertainCount = formulas.filter(f => f.status === 'uncertain').length;
+
   const filtered = formulas.filter(f => {
     if (filterStatus !== 'all' && f.status !== filterStatus) return false;
     if (searchTerm && !f.formula_text.toLowerCase().includes(searchTerm.toLowerCase())) return false;
@@ -35,12 +39,32 @@ export const SidebarList: React.FC<SidebarListProps> = ({
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
             <Layers className="w-4 h-4 text-rose-400" />
-            <span>Formula Detections ({formulas.length})</span>
+            <span>Formulas ({formulas.length})</span>
           </h2>
 
+          {/* Live Accepted & Rejected Counts Badges */}
+          <div className="flex items-center space-x-2">
+            <span
+              className="text-[11px] font-semibold text-emerald-300 bg-emerald-950/80 border border-emerald-700/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm"
+              title="Accepted formulas count"
+            >
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span>Accepted: <strong>{acceptedCount}</strong></span>
+            </span>
+
+            <span
+              className="text-[11px] font-semibold text-rose-300 bg-rose-950/80 border border-rose-700/80 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm"
+              title="Rejected formulas count"
+            >
+              <X className="w-3 h-3 text-rose-400" />
+              <span>Rejected: <strong>{rejectedCount}</strong></span>
+            </span>
+          </div>
+
+          {/* Accept all >= 75% - Hidden from UI per user preference */}
           <button
             onClick={onAcceptAllHighConfidence}
-            className="text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 hover:bg-emerald-900/60 px-2 py-1 rounded border border-emerald-800/60 cursor-pointer transition"
+            className="hidden text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 hover:bg-emerald-900/60 px-2 py-1 rounded border border-emerald-800/60 cursor-pointer transition"
             title="Accept all formulas with confidence >= 75%"
           >
             Accept All ≥75%
@@ -59,19 +83,24 @@ export const SidebarList: React.FC<SidebarListProps> = ({
           />
         </div>
 
-        {/* Filter Pills */}
+        {/* Filter Pills with Counts */}
         <div className="flex space-x-1 text-xs">
-          {['all', 'accepted', 'uncertain', 'rejected'].map((st) => (
+          {[
+            { id: 'all', label: `All (${formulas.length})` },
+            { id: 'accepted', label: `Accepted (${acceptedCount})` },
+            { id: 'uncertain', label: `Pending (${uncertainCount})` },
+            { id: 'rejected', label: `Rejected (${rejectedCount})` }
+          ].map(({ id, label }) => (
             <button
-              key={st}
-              onClick={() => setFilterStatus(st)}
-              className={`flex-1 py-1 capitalize rounded text-[11px] font-medium transition cursor-pointer ${
-                filterStatus === st
-                  ? 'bg-rose-600 text-white font-semibold'
-                  : 'bg-slate-800 hover:bg-slate-700 text-slate-400'
+              key={id}
+              onClick={() => setFilterStatus(id)}
+              className={`flex-1 py-1 text-center rounded text-[10px] font-medium transition cursor-pointer ${
+                filterStatus === id
+                  ? 'bg-rose-600 text-white font-semibold shadow-sm'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
               }`}
             >
-              {st}
+              {label}
             </button>
           ))}
         </div>

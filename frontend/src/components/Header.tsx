@@ -65,9 +65,10 @@ export const Header: React.FC<HeaderProps> = ({
           <span>{docState ? 'Change PDF' : 'Upload PDF'}</span>
         </button>
 
+        {/* Validation Benchmark - Hidden from UI per user preference */}
         <button
           onClick={onRunBenchmark}
-          className="px-3.5 py-2 rounded-lg bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 text-sm font-medium flex items-center gap-2 transition border border-indigo-700/50 shadow-sm cursor-pointer"
+          className="hidden px-3.5 py-2 rounded-lg bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 text-sm font-medium items-center gap-2 transition border border-indigo-700/50 shadow-sm cursor-pointer"
           title="Run accuracy benchmark validation suite"
         >
           <Play className="w-4 h-4 text-indigo-400" />

@@ -29,13 +29,15 @@ export const StatsBar: React.FC<StatsBarProps> = ({ totalPages, stats, filename 
           <span className="font-semibold text-blue-300">{stats.total_detected}</span>
         </div>
 
-        <div className="flex items-center space-x-1.5">
+        {/* Accepted / Ready - Hidden from UI per user preference */}
+        <div className="hidden items-center space-x-1.5">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
           <span>Accepted / Ready:</span>
           <span className="font-semibold text-emerald-300">{stats.accepted_count}</span>
         </div>
 
-        <div className="flex items-center space-x-1.5">
+        {/* Pending Review - Hidden from UI per user preference */}
+        <div className="hidden items-center space-x-1.5">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
           <span>Pending Review:</span>
           <span className="font-semibold text-amber-300">{stats.uncertain_count}</span>
