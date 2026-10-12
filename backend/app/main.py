@@ -36,9 +36,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Storage directories
-UPLOAD_DIR = os.path.abspath("temp_uploads")
-EXPORT_DIR = os.path.abspath("temp_exports")
+# Storage directories - robust for both script execution and standalone frozen executable
+import sys
+BASE_STORAGE_DIR = os.path.dirname(os.path.abspath(sys.argv[0])) if getattr(sys, 'frozen', False) else os.path.abspath(".")
+UPLOAD_DIR = os.path.join(BASE_STORAGE_DIR, "temp_uploads")
+EXPORT_DIR = os.path.join(BASE_STORAGE_DIR, "temp_exports")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(EXPORT_DIR, exist_ok=True)
 

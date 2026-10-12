@@ -66,6 +66,38 @@ assets_dir = os.path.join(dist_dir, "assets")
 if os.path.exists(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+FALLBACK_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FormulaBox Automator - Setup</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .box { max-width: 520px; padding: 2.5rem; background: #1e293b; border-radius: 1rem; border: 1px solid #334155; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+        h1 { color: #f43f5e; margin-top: 0; }
+        p { color: #94a3b8; line-height: 1.6; font-size: 0.95rem; }
+        code { background: #0f172a; padding: 0.3rem 0.6rem; border-radius: 0.35rem; color: #38bdf8; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>FormulaBox Automator</h1>
+        <p>Frontend production bundle is not yet compiled on this machine.</p>
+        <p>Please open a terminal and run:<br><br><code>cd frontend && npm install && npm run build</code></p>
+        <p>Then refresh this browser window.</p>
+    </div>
+</body>
+</html>
+"""
+
+# Serve main SPA HTML directly on root
+@app.get("/")
+async def serve_root():
+    index_file = os.path.join(dist_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return HTMLResponse(content=FALLBACK_HTML, status_code=200)
+
 # SPA catch-all handler for dynamic routing and fallback
 @app.get("/{full_path:path}")
 async def serve_spa_app(full_path: str):
@@ -80,32 +112,7 @@ async def serve_spa_app(full_path: str):
     if os.path.exists(index_file):
         return FileResponse(index_file)
 
-    return HTMLResponse(
-        content="""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>FormulaBox Automator - Setup</title>
-            <style>
-                body { font-family: system-ui, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-                .box { max-width: 520px; padding: 2.5rem; background: #1e293b; border-radius: 1rem; border: 1px solid #334155; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-                h1 { color: #f43f5e; margin-top: 0; }
-                p { color: #94a3b8; line-height: 1.6; font-size: 0.95rem; }
-                code { background: #0f172a; padding: 0.3rem 0.6rem; border-radius: 0.35rem; color: #38bdf8; font-family: monospace; }
-            </style>
-        </head>
-        <body>
-            <div class="box">
-                <h1>FormulaBox Automator</h1>
-                <p>Frontend production bundle is not yet compiled on this machine.</p>
-                <p>Please open a terminal and run:<br><br><code>cd frontend && npm install && npm run build</code></p>
-                <p>Then refresh this browser window.</p>
-            </div>
-        </body>
-        </html>
-        """,
-        status_code=200
-    )
+    return HTMLResponse(content=FALLBACK_HTML, status_code=200)
 
 def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
     """Check if a TCP port is currently open and bound."""
