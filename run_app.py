@@ -11,8 +11,12 @@ import shutil
 # Suppress PyMuPDF deprecation warning
 warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
 
-# Dynamically resolve project root directory
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Dynamically resolve project root directory (supports PyInstaller frozen executable)
+if getattr(sys, 'frozen', False):
+    PROJECT_ROOT = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+else:
+    PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 backend_dir = os.path.join(PROJECT_ROOT, "backend")
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
@@ -29,7 +33,7 @@ def ensure_frontend_built() -> str:
     index_html = os.path.join(dist_dir, "index.html")
     frontend_dir = os.path.join(PROJECT_ROOT, "frontend")
 
-    if os.path.exists(index_html):
+    if getattr(sys, 'frozen', False) or os.path.exists(index_html):
         return dist_dir
 
     print("=" * 60)

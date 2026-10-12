@@ -10,6 +10,11 @@ temp_exports/
 temp_tests/
 test_annotated_out.pdf
  
+# PyInstaller Build Output
+build/
+dist/
+*.spec
+
 # Node & Frontend
 frontend/node_modules/
  
